@@ -22,6 +22,16 @@ What it shows the machine:
 Released by tags `vX.Y.Z` only (contract 3 rule 3); a tag, once out, is never
 moved.
 
+## The copy of `primer_report`
+
+`backend/primer_report` is a copy of `primer-blank/backend/primer_report` at
+the commit `PRIMER_BLANK_COMMIT` of `.github/workflows/ci.yml` names; CI
+compares the two byte for byte. The pin does not follow the blank's head, so
+a change of the blank's package alone leaves this copy behind with CI green.
+The rule: **a delivery that changes `primer-blank/backend/primer_report`
+moves `PRIMER_BLANK_COMMIT` here to the blank's commit with that change and
+carries the copy over, in the same delivery.** Nothing else changes the copy.
+
 ## Checks
 
 CI (`.github/workflows/ci.yml`): ruff, mypy, pytest; the image built as the
