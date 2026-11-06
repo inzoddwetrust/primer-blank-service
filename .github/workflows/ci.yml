@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The machine whose loader and pridem check read primer.yaml (DM-67: the
+  # derive_env step of a stack with derived values).
+  PRIDEM_COMMIT: a93650e4165301651bbf820e87563c489f4a3451
+  # The blank whose backend/primer_report the service carries (DM-66).
+  PRIMER_BLANK_COMMIT: e9b0285c525fcf302057bca9f79a045bbddcc271
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install from the lock
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --require-hashes -r requirements-dev.lock
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - name: Lint
+        run: |
+          ruff check . ../ci
+          ruff format --check . ../ci
+      - name: Types
+        run: mypy .
+      - name: Tests
+        run: python -m pytest tests/ -v -p no:cacheprovider
+
+  image:
+    name: Image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Build the runtime image as the machine does
+        run: |
+          docker build -q -t service:ci --target runtime \
+            --build-arg PRIMER_RELEASE=ci --build-arg PRIMER_COMMIT="$GITHUB_SHA" backend
+      - name: derive and validate run as the machine runs them
+        # docker run --rm <image> <command>: no entrypoint in the way, one
+        # line on stdout for derive, the exit code for validate.
+        run: |
+          key="$(docker run --rm -e SERVICE_TOKEN=ci-only-token-000000000000000001 service:ci python -m app.derive service-key)"
+          echo "$key" | grep -Eq '^sk_[0-9a-f]{40}$'
+          mkdir -p "$RUNNER_TEMP/profile"
+          touch "$RUNNER_TEMP/profile/ok"
+          docker run --rm -v "$RUNNER_TEMP/profile:/primer/data/profile:ro" service:ci python -m app.profile /primer/data/profile
+          rm "$RUNNER_TEMP/profile/ok"
+          if docker run --rm -v "$RUNNER_TEMP/profile:/primer/data/profile:ro" service:ci python -m app.profile /primer/data/profile; then
+            echo "a profile without ok passed validate"; exit 1
+          fi
+
+  check:
+    name: primer.yaml through pridem
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install pridem at the pinned commit (its own recipe)
+        run: |
+          git clone https://github.com/inzoddwetrust/primer.git "$RUNNER_TEMP/pridem"
+          cd "$RUNNER_TEMP/pridem"
+          git checkout --detach "$PRIDEM_COMMIT"
+          test "$(git rev-parse HEAD)" = "$PRIDEM_COMMIT"
+          python -m venv .venv
+          .venv/bin/pip install --no-index --find-links wheels/ --require-hashes -r requirements.lock
+          .venv/bin/pip install --no-deps -e .
+          .venv/bin/pip freeze --exclude-editable > "$RUNNER_TEMP/runtime.txt"
+          .venv/bin/pip install -c "$RUNNER_TEMP/runtime.txt" -e ".[dev]"
+          echo "$RUNNER_TEMP/pridem/.venv/bin" >> "$GITHUB_PATH"
+      - name: The blank at the pinned commit
+        run: |
+          git clone -q https://github.com/inzoddwetrust/primer-blank.git "$RUNNER_TEMP/blank"
+          git -C "$RUNNER_TEMP/blank" checkout -q --detach "$PRIMER_BLANK_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/blank" rev-parse HEAD)" = "$PRIMER_BLANK_COMMIT"
+      - name: Types of the checks
+        run: mypy --strict --disallow-any-explicit ci
+      - name: Selftest of the checks
+        run: |
+          python ci/check_primer_yaml.py primer.yaml --selftest
+          python ci/check_image_pins.py --selftest
+          python ci/check_primer_report.py "$RUNNER_TEMP/blank" --selftest
+      - name: primer.yaml
+        run: python ci/check_primer_yaml.py primer.yaml
+      - name: Images pinned by tag and digest
+        run: python ci/check_image_pins.py
+      - name: primer_report is the blank's
+        run: python ci/check_primer_report.py "$RUNNER_TEMP/blank"
+      - name: The repository through pridem check
+        # The directory by its absolute path: pridem check names the verdict's
+        # first step by the directory's name, and "." has none.
+        run: pridem check "$GITHUB_WORKSPACE"

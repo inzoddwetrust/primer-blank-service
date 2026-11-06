@@ -1,0 +1,29 @@
+schema: 1
+name: primer-blank-service
+kind: service
+
+# The machine's test service (DM-59): the shape of a co-located service of
+# protocol 4 -- three seams to its product (its address, a minted token, a
+# derived key), one seam from it, and the product's data in form D.
+
+stacks:
+  primer-blank-service:
+    compose: docker-compose.yml
+    app: { service: app, port: 8000, health: /health, ready: /ready }
+
+env:
+  EDITION:             { source: passport, key: edition }
+  SERVICE_API_URL:     { source: address }
+  SERVICE_TOKEN:       { source: minted }
+  SERVICE_KEY:         { source: derived, run: python -m app.derive service-key }
+  PRODUCT_WEBHOOK_URL: { source: seam, from: product }
+
+provides: [SERVICE_API_URL, SERVICE_TOKEN, SERVICE_KEY]
+requires: [PRODUCT_WEBHOOK_URL]
+
+accepts:
+  profile:
+    validate: python -m app.profile <dir>
+    env: PROFILE_DIR
+
+report: { health: /health, ready: /ready, logs: json, junit: true }

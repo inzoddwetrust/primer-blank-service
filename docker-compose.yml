@@ -1,0 +1,23 @@
+# The stack `primer-blank-service` of primer.yaml. The machine names the
+# compose project (-p) and passes the stack's env with --env-file; every
+# variable below is required, ${VAR:?} (contract 3 rule 18). The product's
+# profile is mounted by the machine (form D), not here.
+
+services:
+  app:
+    build:
+      context: ./backend
+      target: runtime
+    environment:
+      EDITION: ${EDITION:?}
+      SERVICE_API_URL: ${SERVICE_API_URL:?}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?}
+      SERVICE_KEY: ${SERVICE_KEY:?}
+      PRODUCT_WEBHOOK_URL: ${PRODUCT_WEBHOOK_URL:?}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
