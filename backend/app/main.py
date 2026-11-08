@@ -5,6 +5,9 @@ A service of protocol 4 without a database: ``alembic_head`` is ``null``
 names the provides whose values came, ``requires_satisfied`` says whether the
 product's webhook came -- and its one check, ``config``, is measured from
 memory: every value came and ``SERVICE_KEY`` is the key of ``SERVICE_TOKEN``.
+
+The factory returns the app inside the request-id middleware of
+``primer_report`` (``PrimerReport.install``), not the ``FastAPI`` object.
 """
 
 import logging
@@ -13,6 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from starlette.types import ASGIApp
 
 from app.config import Settings
 from app.derive import service_key
@@ -47,7 +51,7 @@ def consistent(settings: Settings) -> bool:
     )
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> ASGIApp:
     """Build the app; settings default to the environment."""
     settings = settings or Settings()
     names = provided(settings)
@@ -83,5 +87,4 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         checks={"config": config},
         details=lambda: {"provides": len(names), "profile": profile},
     )
-    report.install(app)
-    return app
+    return report.install(app)

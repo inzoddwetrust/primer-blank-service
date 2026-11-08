@@ -26,3 +26,14 @@ def test_app_started_names_its_edition_and_provides(
         "provides": ["SERVICE_API_URL", "SERVICE_TOKEN"],
     }
     assert "invented-minted-token" not in json.dumps(line)  # names, never values
+
+
+def test_the_factory_serves_through_the_request_id_middleware() -> None:
+    """``create_app`` returns the app inside the request-id middleware
+    (``PrimerReport.install``): a well-formed ``X-Request-ID`` comes back, and a
+    request without one gets one (protocol 9.6)."""
+    for client in client_for(settings()):
+        given = client.get("/health", headers={"X-Request-ID": "probe-74.service"})
+        assert given.headers.get_list("x-request-id") == ["probe-74.service"]
+        (fresh,) = client.get("/health").headers.get_list("x-request-id")
+        assert fresh != ""

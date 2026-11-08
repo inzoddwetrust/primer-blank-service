@@ -7,9 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A newer push cancels the older run of the same branch or pull request,
+# never of main: acceptance reads the CI of every commit of main.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -19,7 +21,7 @@ env:
   # derive_env step of a stack with derived values).
   PRIDEM_COMMIT: a93650e4165301651bbf820e87563c489f4a3451
   # The blank whose backend/primer_report the service carries (DM-66).
-  PRIMER_BLANK_COMMIT: e9b0285c525fcf302057bca9f79a045bbddcc271
+  PRIMER_BLANK_COMMIT: 47f4e7c9a1092c17ef3fdc1b4658b05aa0b690d6
 
 jobs:
   backend:
